@@ -1,4 +1,7 @@
-use super::{message::Message, packet::Packet};
+use super::{
+    message::{Message, MessageError},
+    packet::Packet,
+};
 use crate::component::{self, online::ONLINE_CLIENTS, store::Store};
 use bincode::{
     config::{LittleEndian, VarintEncoding, WithOtherEndian, WithOtherIntEncoding},
@@ -84,11 +87,9 @@ impl Client {
         &self,
         message: Message,
         time_out_duration: Duration,
-    ) -> anyhow::Result<Message> {
+    ) -> anyhow::Result<Message, MessageError> {
         if time_out_duration.is_zero() {
-            return Err(anyhow::anyhow!(
-                "client: call method must have a non-zero timeout"
-            ));
+            return Err(MessageError::InvalidArguments);
         }
 
         let (tx, mut rx) = channel(1);
@@ -99,12 +100,22 @@ impl Client {
 
         if let Err(err) = self.inner_send(call_id, message).await {
             self.remove_call(&call_id).await;
-            return Err(anyhow::anyhow!(err));
+            error!("call failed: {:?}", err);
+            return Err(MessageError::InternalError);
         }
 
-        match timeout(time_out_duration, rx.recv()).await? {
-            Some(message) => Ok(message),
-            None => Err(anyhow::anyhow!("client: call sender closed")),
+        match timeout(time_out_duration, rx.recv()).await {
+            Ok(res) => match res {
+                Some(message) => match message {
+                    Message::Error(err) => Err(err),
+                    resp_message => Ok(resp_message),
+                },
+                None => Err(MessageError::InternalError),
+            },
+            Err(_) => {
+                self.remove_call(&call_id).await;
+                Err(MessageError::CallTimeout)
+            }
         }
     }
 
@@ -201,6 +212,10 @@ impl Client {
                             info!("client: disconnected");
                             break;
                         },
+                        std::io::ErrorKind::ConnectionReset => {
+                            info!("client: connection reset");
+                            break;
+                        },
                         _ => {
                             error!("client: stream_loop read packet error: {:?}", err);
                             continue;
@@ -232,23 +247,21 @@ impl Client {
                     let store = store.clone();
 
                     tokio::spawn(async move {
-                        let process_result = packet.message.handle(client.clone(), store).await;
+                        let resp_message = packet
+                            .message
+                            .handle(client.clone(), store)
+                            .await
+                            .unwrap_or_else(|m| Message::Error(m));
 
-                        match process_result {
-                            Ok(Some(message)) => {
-                                if let Err(err) = client.inner_send(packet.call_id, message).await {
-                                    error!(
-                                        "client: stream_loop send call response message error: {:?}",
-                                        err
-                                    );
-                                }
-                            }
-                            Ok(None) => {}
-                            Err(_) => {
-                                // normally, we should send an error message to caller (remote
-                                // machine), but considering current stage of project, to simplify
-                                // the process, we just ignore it temporarily.
-                            }
+                        if resp_message == Message::None {
+                            return;
+                        }
+
+                        if let Err(err) = client.inner_send(packet.call_id, resp_message).await {
+                            error!(
+                                "client: stream_loop send call response message error: {:?}",
+                                err
+                            );
                         }
                     });
                 }

@@ -1,13 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct DesktopConnectAskReq {
+pub struct DesktopConnectAskAuthReq {
     pub offer_device_id: String,
+    pub secret_password: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct DesktopConnectAskResp {
-    pub agree: bool,
-    pub password_auth_public_key_n: Vec<u8>,
-    pub password_auth_public_key_e: Vec<u8>,
+pub struct DesktopConnectAskAuthResp {
+    pub password_correct: bool,
 }

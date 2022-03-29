@@ -1,31 +1,32 @@
+use std::{sync::Arc, time::Duration};
+
+use log::info;
+use serde::{Deserialize, Serialize};
+
 use crate::{
     component::online::ONLINE_CLIENTS,
-    handler::desktop_connect_ask::DesktopConnectAskReq,
+    handler::desktop_connect_ask_auth::DesktopConnectAskAuthReq,
     network::{
         message::{Message, MessageError},
         Client,
     },
 };
-use log::info;
-use serde::{Deserialize, Serialize};
-use std::{sync::Arc, time::Duration};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct DesktopConnectOfferReq {
+pub struct DesktopConnectOfferAuthReq {
     pub offer_device_id: String,
     pub ask_device_id: String,
+    pub secret_message: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct DesktopConnectOfferResp {
-    pub agree: bool,
-    pub password_auth_public_key_n: Vec<u8>,
-    pub password_auth_public_key_e: Vec<u8>,
+pub struct DesktopConnectOfferAuthResp {
+    pub password_correct: bool,
 }
 
-impl DesktopConnectOfferReq {
+impl DesktopConnectOfferAuthReq {
     pub async fn handle(self, client: Arc<Client>) -> anyhow::Result<Message, MessageError> {
-        info!("handle desktop_connect_offer: {:?}", self);
+        info!("handle desktop_connect_offer_auth_req: {:?}", self);
 
         let online_clients = ONLINE_CLIENTS.read().await;
         let ask_client = match online_clients.get(&self.ask_device_id) {
@@ -39,21 +40,22 @@ impl DesktopConnectOfferReq {
 
         let ask_resp_message = match ask_client
             .call(
-                Message::DesktopConnectAskReq(DesktopConnectAskReq {
+                Message::DesktopConnectAskAuthReq(DesktopConnectAskAuthReq {
                     offer_device_id: self.offer_device_id,
+                    secret_password: self.secret_message,
                 }),
                 Duration::from_secs(10),
             )
             .await?
         {
-            Message::DesktopConnectAskResp(message) => message,
+            Message::DesktopConnectAskAuthResp(message) => message,
             _ => return Err(MessageError::MismatchedResponseMessage),
         };
 
-        Ok(Message::DesktopConnectOfferResp(DesktopConnectOfferResp {
-            agree: ask_resp_message.agree,
-            password_auth_public_key_n: ask_resp_message.password_auth_public_key_n,
-            password_auth_public_key_e: ask_resp_message.password_auth_public_key_e,
-        }))
+        Ok(Message::DesktopConnectOfferAuthResp(
+            DesktopConnectOfferAuthResp {
+                password_correct: ask_resp_message.password_correct,
+            },
+        ))
     }
 }

@@ -1,4 +1,4 @@
-use crate::network::message::Message;
+use crate::network::message::{Message, MessageError};
 use log::info;
 use serde::{Deserialize, Serialize};
 
@@ -13,11 +13,11 @@ pub struct HeartBeatResp {
 }
 
 impl HeartBeatReq {
-    pub async fn handle(self) -> anyhow::Result<Option<Message>> {
+    pub async fn handle(self) -> anyhow::Result<Message, MessageError> {
         info!("handle heart_beat: {:?}", self);
 
-        Ok(Some(Message::HeartBeatResp(HeartBeatResp {
+        Ok(Message::HeartBeatResp(HeartBeatResp {
             time_stamp: self.time_stamp,
-        })))
+        }))
     }
 }

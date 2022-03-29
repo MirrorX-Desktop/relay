@@ -1,19 +1,34 @@
-use crate::component;
-
 use super::Client;
+use crate::component;
+use crate::handler::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub enum Message {
-    DeviceGoesOnlineReq(crate::handler::device_goes_online::DeviceGoesOnlineReq),
-    DeviceGoesOnlineResp(crate::handler::device_goes_online::DeviceGoesOnlineResp),
-    HeartBeatReq(crate::handler::heart_beat::HeartBeatReq),
-    HeartBeatResp(crate::handler::heart_beat::HeartBeatResp),
-    DesktopConnectOfferReq(crate::handler::desktop_connect_offer::DesktopConnectOfferReq),
-    DesktopConnectOfferResp(crate::handler::desktop_connect_offer::DesktopConnectOfferResp),
-    DesktopConnectAskReq(crate::handler::desktop_connect_ask::DesktopConnectAskReq),
-    DesktopConnectAskResp(crate::handler::desktop_connect_ask::DesktopConnectAskResp),
+    None,
+    Error(MessageError),
+    DeviceGoesOnlineReq(device_goes_online::DeviceGoesOnlineReq),
+    DeviceGoesOnlineResp(device_goes_online::DeviceGoesOnlineResp),
+    HeartBeatReq(heart_beat::HeartBeatReq),
+    HeartBeatResp(heart_beat::HeartBeatResp),
+    DesktopConnectOfferReq(desktop_connect_offer::DesktopConnectOfferReq),
+    DesktopConnectOfferResp(desktop_connect_offer::DesktopConnectOfferResp),
+    DesktopConnectAskReq(desktop_connect_ask::DesktopConnectAskReq),
+    DesktopConnectAskResp(desktop_connect_ask::DesktopConnectAskResp),
+    DesktopConnectOfferAuthReq(desktop_connect_offer_auth::DesktopConnectOfferAuthReq),
+    DesktopConnectOfferAuthResp(desktop_connect_offer_auth::DesktopConnectOfferAuthResp),
+    DesktopConnectAskAuthReq(desktop_connect_ask_auth::DesktopConnectAskAuthReq),
+    DesktopConnectAskAuthResp(desktop_connect_ask_auth::DesktopConnectAskAuthResp),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub enum MessageError {
+    InternalError,
+    CallTimeout,
+    InvalidArguments,
+    MismatchedResponseMessage,
+    RemoteClientOfflineOrNotExist,
 }
 
 impl Message {
@@ -21,12 +36,13 @@ impl Message {
         self,
         client: Arc<Client>,
         store: Arc<dyn component::store::Store>,
-    ) -> anyhow::Result<Option<Message>> {
+    ) -> anyhow::Result<Message, MessageError> {
         match self {
             Message::DeviceGoesOnlineReq(message) => message.handle(client, store).await,
             Message::HeartBeatReq(message) => message.handle().await,
             Message::DesktopConnectOfferReq(message) => message.handle(client).await,
-            _ => Ok(None),
+            Message::DesktopConnectOfferAuthReq(message) => message.handle(client).await,
+            _ => Ok(Message::None),
         }
     }
 }
