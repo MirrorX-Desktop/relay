@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     component::online::ONLINE_CLIENTS,
-    handler::desktop_connect_ask_auth::DesktopConnectAskAuthReq,
     network::{
         message::{Message, MessageError},
         Client,
@@ -13,20 +12,17 @@ use crate::{
 };
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct DesktopConnectOfferAuthReq {
-    pub offer_device_id: String,
-    pub ask_device_id: String,
-    pub secret_message: Vec<u8>,
+pub struct DesktopConnectOpenStreamReq {
+    offer_device_id: String,
+    ask_device_id: String,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct DesktopConnectOfferAuthResp {
-    pub password_correct: bool,
-}
+pub struct DesktopConnectOpenStreamResp {}
 
-impl DesktopConnectOfferAuthReq {
-    pub async fn handle(self, client: Arc<Client>) -> anyhow::Result<Message, MessageError> {
-        info!("handle desktop_connect_offer_auth_req: {:?}", self);
+impl DesktopConnectOpenStreamReq {
+    pub async fn handle(self, _: Arc<Client>) -> anyhow::Result<Message, MessageError> {
+        info!("handle desktop_connect_open_stream: {:?}", self);
 
         let online_clients = ONLINE_CLIENTS.read().await;
         let ask_client = match online_clients.get(&self.ask_device_id) {
@@ -38,24 +34,22 @@ impl DesktopConnectOfferAuthReq {
 
         drop(online_clients);
 
-        let ask_resp_message = match ask_client
+        let open_stream_resp_message = match ask_client
             .call(
-                Message::DesktopConnectAskAuthReq(DesktopConnectAskAuthReq {
+                Message::DesktopConnectOpenStreamReq(DesktopConnectOpenStreamReq {
                     offer_device_id: self.offer_device_id,
-                    secret_message: self.secret_message,
+                    ask_device_id: self.ask_device_id,
                 }),
                 Duration::from_secs(10),
             )
             .await?
         {
-            Message::DesktopConnectAskAuthResp(message) => message,
+            Message::DesktopConnectOpenStreamResp(message) => message,
             _ => return Err(MessageError::MismatchedResponseMessage),
         };
 
-        Ok(Message::DesktopConnectOfferAuthResp(
-            DesktopConnectOfferAuthResp {
-                password_correct: ask_resp_message.password_correct,
-            },
+        Ok(Message::DesktopConnectOpenStreamResp(
+            open_stream_resp_message,
         ))
     }
 }

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct DesktopConnectAskAuthReq {
     pub offer_device_id: String,
-    pub secret_password: Vec<u8>,
+    pub secret_message: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]

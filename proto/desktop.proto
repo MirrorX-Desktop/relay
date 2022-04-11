@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package mirrorx.desktop;
+
+service Desktop {
+    rpc Connect(DesktopConnectRequest) returns (DesktopConnectResponse);
+
+    rpc SubscribeConnectRequest(stream DesktopConnectResponse)
+        returns (stream DesktopConnectRequest);
+
+    rpc ConnectAuthorization(ConnectAuthorizationRequest)
+        returns (ConnectAuthorizationResponse);
+
+    rpc SubscribeConnectAuthorizationRequest(
+        stream ConnectAuthorizationResponse)
+        returns (stream ConnectAuthorizationRequest);
+}
+
+message SecretMessage {
+    string password        = 1;
+    bytes offer_device_key = 2;
+}
+
+message DesktopConnectRequest {
+    string offer_device_id = 1;
+    string ask_device_id   = 2;
+}
+
+message DesktopConnectResponse {
+    string offer_device_id = 1;
+    string ask_device_id   = 2;
+    bytes ask_device_key   = 3;
+}
+
+message ConnectAuthorizationRequest {
+    string offer_device_id = 1;
+    string ask_device_id   = 2;
+    bytes secret_message   = 3;
+}
+
+message ConnectAuthorizationResponse {
+    string offer_device_id = 1;
+    string ask_device_id   = 2;
+    bool authorized        = 3;
+}

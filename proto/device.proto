@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package mirrorx.device;
+
+service Device {
+    rpc RegisterID(RegisterIDRequest) returns (RegisterIDResponse);
+}
+
+message RegisterIDRequest {
+    string device_id = 1;
+}
+
+message RegisterIDResponse {
+    string device_id  = 1;
+    fixed32 expire_at = 2;
+}

@@ -20,6 +20,8 @@ pub enum Message {
     DesktopConnectOfferAuthResp(desktop_connect_offer_auth::DesktopConnectOfferAuthResp),
     DesktopConnectAskAuthReq(desktop_connect_ask_auth::DesktopConnectAskAuthReq),
     DesktopConnectAskAuthResp(desktop_connect_ask_auth::DesktopConnectAskAuthResp),
+    DesktopConnectOpenStreamReq(desktop_connect_open_stream::DesktopConnectOpenStreamReq),
+    DesktopConnectOpenStreamResp(desktop_connect_open_stream::DesktopConnectOpenStreamResp),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -42,6 +44,7 @@ impl Message {
             Message::HeartBeatReq(message) => message.handle().await,
             Message::DesktopConnectOfferReq(message) => message.handle(client).await,
             Message::DesktopConnectOfferAuthReq(message) => message.handle(client).await,
+            Message::DesktopConnectOpenStreamReq(message) => message.handle(client).await,
             _ => Ok(Message::None),
         }
     }
