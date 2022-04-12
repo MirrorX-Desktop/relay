@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     component::online::ONLINE_CLIENTS,
-    handler::desktop_connect_ask_auth::DesktopConnectAskAuthReq,
+    service::desktop_connect_ask_auth::DesktopConnectAskAuthReq,
     network::{
         message::{Message, MessageError},
         Client,

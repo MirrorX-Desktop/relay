@@ -1,53 +1,71 @@
 use std::sync::Arc;
 
-use log::error;
-use tonic::{Request, Response, Status};
+use log::{error, info};
 
 use crate::{
-    component,
-    session::{Manager, Session},
+    component::{self, online::ClientManager, store::Store},
+    network::Client,
 };
 
-use super::rpc::{device_server::Device, RegisterIdRequest, RegisterIdResponse};
+use super::message::{
+    reply::{HeartBeatReply, RegisterDeviceIdReply},
+    reply_error::ReplyError,
+    request::{HeartBeatRequest, RegisterDeviceIdRequest},
+};
 
 pub struct DeviceService {
-    session_mgr: Arc<Manager>,
-    store: Arc<dyn component::store::Store>,
+    store: Arc<dyn Store>,
+    client_manager: Arc<ClientManager>,
 }
 
 impl DeviceService {
-    pub fn new(session_mgr: Arc<Manager>, store: Arc<dyn component::store::Store>) -> Self {
-        DeviceService { session_mgr, store }
+    pub fn new(store: Arc<dyn Store>, client_manager: Arc<ClientManager>) -> Self {
+        DeviceService {
+            store,
+            client_manager,
+        }
     }
-}
 
-#[tonic::async_trait]
-impl Device for DeviceService {
-    async fn register_id(
+    pub async fn heart_beat(
         &self,
-        request: Request<RegisterIdRequest>,
-    ) -> Result<Response<RegisterIdResponse>, Status> {
-        let register_id_request = request.into_inner();
-        if register_id_request.device_id.is_empty() {
-            match self.store.device_id_renew(&register_id_request.device_id) {
-                Ok(Some(expire_at)) => {
-                    let session = Session::new(register_id_request.device_id.clone());
-                    self.session_mgr.add(session);
+        client: Arc<Client>,
+        req: HeartBeatRequest,
+    ) -> Result<HeartBeatReply, ReplyError> {
+        info!("handle heart_beat");
 
-                    return Ok(Response::new(RegisterIdResponse {
-                        device_id: register_id_request.device_id.clone(),
+        Ok(HeartBeatReply {
+            time_stamp: chrono::Utc::now().timestamp() as u32,
+        })
+    }
+
+    pub async fn register_id(
+        &self,
+        client: Arc<Client>,
+        req: RegisterDeviceIdRequest,
+    ) -> Result<RegisterDeviceIdReply, ReplyError> {
+        info!("handle register_id");
+
+        if let Some(device_id) = &req.device_id {
+            match self.store.device_id_renew(device_id) {
+                Ok(Some(expire_at)) => {
+                    client.set_device_id(device_id.clone());
+
+                    self.client_manager.add(device_id.clone(), client);
+
+                    return Ok(RegisterDeviceIdReply {
+                        device_id: device_id.to_string(),
                         expire_at,
-                    }));
+                    });
                 }
                 Err(err) => {
-                    error!("renew device_id error: {:?}", err);
-                    return Err(Status::internal("renew device_id failed"));
+                    error!("register_id: {:?}", err);
+                    return Err(ReplyError::Internal);
                 }
-                _ => {
-                    // device_id not exist in pool, allocate a new one
-                }
+                _ => {}
             };
         }
+
+        // allocate a new device id
 
         let mut failure_counter = 0;
 
@@ -57,27 +75,25 @@ impl Device for DeviceService {
 
             match self.store.set_device_id(&new_device_id) {
                 Ok(Some(expire_at)) => {
-                    let session = Session::new(register_id_request.device_id.clone());
-                    self.session_mgr.add(session);
+                    client.set_device_id(new_device_id.clone());
 
-                    return Ok(Response::new(RegisterIdResponse {
-                        device_id: register_id_request.device_id.clone(),
+                    self.client_manager.add(new_device_id.clone(), client);
+
+                    return Ok(RegisterDeviceIdReply {
+                        device_id: new_device_id.to_string(),
                         expire_at,
-                    }));
+                    });
                 }
                 Ok(None) => continue,
                 Err(err) => {
                     // only error increase fail counter
                     failure_counter += 1;
-                    if failure_counter < 5 {
+                    if failure_counter < 10 {
                         continue;
                     }
 
-                    error!(
-                        "allocate new device_id whith too many failures, the lastest error: {:?}",
-                        err
-                    );
-                    return Err(Status::internal("too many failures"));
+                    error!("register_id: too many failures, lastest error: {:?}", err);
+                    return Err(ReplyError::Internal);
                 }
             };
         }

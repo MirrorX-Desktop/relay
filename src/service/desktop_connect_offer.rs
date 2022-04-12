@@ -1,6 +1,6 @@
 use crate::{
     component::online::ONLINE_CLIENTS,
-    handler::desktop_connect_ask::DesktopConnectAskReq,
+    service::desktop_connect_ask::DesktopConnectAskReq,
     network::{
         message::{Message, MessageError},
         Client,

@@ -1,13 +1,11 @@
 use std::{ops::Add, sync::Arc, time::Duration};
 
-use redis::{Commands, RedisResult};
-
 pub trait Store: Send + Sync {
     fn device_id_renew(&self, device_id: &str) -> anyhow::Result<Option<u32>>;
     fn set_device_id(&self, device_id: &str) -> anyhow::Result<Option<u32>>;
 }
 
-pub fn new_store(use_redis: bool) -> anyhow::Result<Arc<dyn Store>> {
+pub fn new_store() -> anyhow::Result<Arc<dyn Store>> {
     let store = RedisStore::new()?;
     Ok(Arc::new(store))
 }
