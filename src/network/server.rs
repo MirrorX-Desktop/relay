@@ -1,4 +1,4 @@
-use super::Client;
+use super::client::Client;
 use crate::{
     network::{client::BINCODER, packet::Packet},
     service::{
@@ -21,7 +21,7 @@ use tokio::{
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
 use tokio_util::codec::LengthDelimitedCodec;
 
-pub async fn server(
+pub async fn run(
     device_service: DeviceService,
     desktop_service: DesktopService,
 ) -> anyhow::Result<()> {
@@ -70,9 +70,7 @@ fn serve_stream<'a, 'b>(
         .new_framed(stream);
 
     let (mut sink, mut stream) = framed_stream.split();
-
     let (tx, mut rx) = mpsc::channel(16);
-
     let client = Arc::new(Client::new(tx));
 
     tokio::spawn(async move {

@@ -1,4 +1,4 @@
-use crate::network::Client;
+use crate::network::client::Client;
 use dashmap::DashMap;
 use std::sync::Arc;
 

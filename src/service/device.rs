@@ -1,17 +1,14 @@
-use std::sync::Arc;
-
-use log::{error, info};
-
-use crate::{
-    component::{self, online::ClientManager, store::Store},
-    network::Client,
-};
-
 use super::message::{
     reply::{HeartBeatReply, RegisterDeviceIdReply},
     reply_error::ReplyError,
     request::{HeartBeatRequest, RegisterDeviceIdRequest},
 };
+use crate::{
+    component::{self, online::ClientManager, store::Store},
+    network::client::Client,
+};
+use log::{debug, error, info};
+use std::sync::Arc;
 
 pub struct DeviceService {
     store: Arc<dyn Store>,
@@ -31,7 +28,11 @@ impl DeviceService {
         client: Arc<Client>,
         req: HeartBeatRequest,
     ) -> Result<HeartBeatReply, ReplyError> {
-        info!("handle heart_beat");
+        debug!(
+            "handle heart_beat, client: {}, timestamp: {}",
+            client.device_id(),
+            req.time_stamp
+        );
 
         Ok(HeartBeatReply {
             time_stamp: chrono::Utc::now().timestamp() as u32,

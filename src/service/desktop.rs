@@ -1,26 +1,18 @@
-use std::{sync::Arc, time::Duration};
-
-use log::info;
-
+use super::message::{reply::ConnectReply, reply_error::ReplyError, request::ConnectRequest};
 use crate::{
-    component::{online::ClientManager, store::Store},
-    network::Client,
+    component::online::ClientManager, network::client::Client,
     service::message::request::RequestMessage,
 };
-
-use super::message::{reply::ConnectReply, reply_error::ReplyError, request::ConnectRequest};
+use log::info;
+use std::{sync::Arc, time::Duration};
 
 pub struct DesktopService {
-    store: Arc<dyn Store>,
     client_manager: Arc<ClientManager>,
 }
 
 impl DesktopService {
-    pub fn new(store: Arc<dyn Store>, client_manager: Arc<ClientManager>) -> Self {
-        DesktopService {
-            store,
-            client_manager,
-        }
+    pub fn new(client_manager: Arc<ClientManager>) -> Self {
+        DesktopService { client_manager }
     }
 
     pub async fn connect(
@@ -28,7 +20,7 @@ impl DesktopService {
         client: Arc<Client>,
         req: ConnectRequest,
     ) -> Result<ConnectReply, ReplyError> {
-        info!("handle connect");
+        info!("handle connect, client: {}", client.device_id());
 
         let ask_client = match self.client_manager.find(&req.ask_device_id) {
             Some(client) => client,
