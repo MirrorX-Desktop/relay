@@ -1,6 +1,9 @@
 use super::client::Client;
 use crate::{
-    network::{client::BINCODER, packet::Packet},
+    network::{
+        client::BINCODER,
+        packet::{Packet, ReplyPacket},
+    },
     service::{
         desktop::DesktopService,
         device::DeviceService,
@@ -59,7 +62,7 @@ pub async fn run(
     }
 }
 
-fn serve_stream<'a, 'b>(
+fn serve_stream(
     stream: TlsStream<TcpStream>,
     device_service: Arc<DeviceService>,
     desktop_service: Arc<DesktopService>,
@@ -111,7 +114,7 @@ fn serve_stream<'a, 'b>(
 
                 let client = client.clone();
                 tokio::spawn(async move {
-                    let res = match request_packet.request_message {
+                    let res = match request_packet.payload {
                         RequestMessage::HeartBeatRequest(message) => inner_device_service
                             .heart_beat(client.clone(), message)
                             .await
@@ -126,20 +129,17 @@ fn serve_stream<'a, 'b>(
                             .map(|msg| ReplyMessage::ConnectReply(msg)),
                     };
 
-                    if let Ok(reply_message) = res {
-                        if let Err(err) = client
-                            .reply_request(request_packet.call_id, reply_message)
-                            .await
-                        {
-                            error!("client reply_request failed: {:?}", err);
-                        }
-                    } else {
-                        // todo: handle error
-                        todo!();
+                    let reply_packet = ReplyPacket {
+                        call_id: request_packet.call_id,
+                        payload: res,
+                    };
+
+                    if let Err(err) = client.reply_request(reply_packet).await {
+                        error!("client reply_request failed: {:?}", err);
                     }
                 });
             } else if let Some(reply_packet) = packet.reply_packet {
-                client.reply_call(reply_packet.call_id, reply_packet.reply_message);
+                client.reply_call(reply_packet.call_id, reply_packet);
             } else {
                 warn!("client receive unknown packet");
             }
