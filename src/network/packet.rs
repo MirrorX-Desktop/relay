@@ -1,17 +1,19 @@
 use serde::{Deserialize, Serialize};
 
-use crate::service::message::{reply::ReplyMessage, request::RequestMessage};
+use crate::service::message::{
+    reply::ReplyMessage, reply_error::ReplyError, request::RequestMessage,
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestPacket {
     pub call_id: u8,
-    pub request_message: RequestMessage,
+    pub payload: RequestMessage,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ReplyPacket {
     pub call_id: u8,
-    pub reply_message: ReplyMessage,
+    pub payload: Result<ReplyMessage, ReplyError>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

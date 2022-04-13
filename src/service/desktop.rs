@@ -1,7 +1,8 @@
 use super::message::{reply::ConnectReply, reply_error::ReplyError, request::ConnectRequest};
 use crate::{
-    component::online::ClientManager, network::client::Client,
-    service::message::request::RequestMessage,
+    component::online::ClientManager,
+    network::client::Client,
+    service::message::{reply::ReplyMessage, request::RequestMessage},
 };
 use log::info;
 use std::{sync::Arc, time::Duration};
@@ -27,10 +28,14 @@ impl DesktopService {
             None => return Err(ReplyError::DeviceNotFound),
         };
 
-        ask_client
+        let reply_message = ask_client
             .call(RequestMessage::ConnectRequest(req), Duration::from_secs(10))
             .await?;
 
-        Err(ReplyError::DeviceNotFound)
+        if let ReplyMessage::ConnectReply(message) = reply_message {
+            Ok(message)
+        } else {
+            Err(ReplyError::Internal)
+        }
     }
 }

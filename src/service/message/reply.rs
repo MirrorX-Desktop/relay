@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum ReplyMessage {
     HeartBeatReply(HeartBeatReply),
     RegisterDeviceIdReply(RegisterDeviceIdReply),
@@ -8,14 +8,14 @@ pub enum ReplyMessage {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct RegisterDeviceIdReply {
-    pub device_id: String,
-    pub expire_at: u32,
+pub struct HeartBeatReply {
+    pub time_stamp: u32,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct HeartBeatReply {
-    pub time_stamp: u32,
+pub struct RegisterDeviceIdReply {
+    pub device_id: String,
+    pub expire_at: u32,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]

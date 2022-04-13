@@ -24,7 +24,7 @@ lazy_static! {
 
 pub struct Client {
     tx: mpsc::Sender<Vec<u8>>,
-    call_tx_map: DashMap<u8, mpsc::Sender<ReplyMessage>>,
+    call_tx_map: DashMap<u8, mpsc::Sender<ReplyPacket>>,
     device_id: RwLock<String>,
     call_id: AtomicU8,
 }
@@ -49,7 +49,7 @@ impl Client {
 
     pub async fn call(
         &self,
-        request_message: RequestMessage,
+        request: RequestMessage,
         timeout: Duration,
     ) -> Result<ReplyMessage, ReplyError> {
         let call_id = self.next_call_id();
@@ -57,7 +57,7 @@ impl Client {
         let packet = Packet {
             request_packet: Some(RequestPacket {
                 call_id,
-                request_message,
+                payload: request,
             }),
             reply_packet: None,
         };
@@ -72,7 +72,7 @@ impl Client {
 
         match tokio::time::timeout(timeout, rx.recv()).await {
             Ok(res) => match res {
-                Some(message) => Ok(message),
+                Some(reply_packet) => reply_packet.payload,
                 None => Err(ReplyError::Internal),
             },
             Err(_) => {
@@ -82,9 +82,9 @@ impl Client {
         }
     }
 
-    pub fn reply_call(&self, call_id: u8, reply_message: ReplyMessage) {
+    pub fn reply_call(&self, call_id: u8, reply_packet: ReplyPacket) {
         self.remove_call(call_id).map(|tx| {
-            if let Err(err) = tx.try_send(reply_message) {
+            if let Err(err) = tx.try_send(reply_packet) {
                 error!(
                     "client[{:?}] reply call failed: {:?}",
                     self.device_id(),
@@ -94,20 +94,16 @@ impl Client {
         });
     }
 
-    pub async fn reply_request(
-        &self,
-        call_id: u8,
-        reply_message: ReplyMessage,
-    ) -> anyhow::Result<()> {
+    pub async fn reply_request(&self, reply_packet: ReplyPacket) -> Result<(), ReplyError> {
         let packet = Packet {
             request_packet: None,
-            reply_packet: Some(ReplyPacket {
-                call_id,
-                reply_message,
-            }),
+            reply_packet: Some(reply_packet),
         };
 
-        self.send(packet).await
+        self.send(packet).await.map_err(|err| {
+            error!("reply_request: {:?}", err);
+            ReplyError::Internal
+        })
     }
 
     async fn send(&self, packet: Packet) -> anyhow::Result<()> {
@@ -127,13 +123,13 @@ impl Client {
         }
     }
 
-    fn register_call(&self, call_id: u8) -> mpsc::Receiver<ReplyMessage> {
+    fn register_call(&self, call_id: u8) -> mpsc::Receiver<ReplyPacket> {
         let (tx, rx) = mpsc::channel(1);
         self.call_tx_map.insert(call_id, tx);
         rx
     }
 
-    fn remove_call(&self, call_id: u8) -> Option<mpsc::Sender<ReplyMessage>> {
+    fn remove_call(&self, call_id: u8) -> Option<mpsc::Sender<ReplyPacket>> {
         self.call_tx_map.remove(&call_id).map(|entry| entry.1)
     }
 }

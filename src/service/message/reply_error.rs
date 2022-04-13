@@ -5,4 +5,5 @@ pub enum ReplyError {
     Internal,
     Timeout,
     DeviceNotFound,
+    CastFailed,
 }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum RequestMessage {
     HeartBeatRequest(HeartBeatRequest),
     RegisterDeviceIdRequest(RegisterDeviceIdRequest),
@@ -8,13 +8,13 @@ pub enum RequestMessage {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct RegisterDeviceIdRequest {
-    pub device_id: Option<String>,
+pub struct HeartBeatRequest {
+    pub time_stamp: u32,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct HeartBeatRequest {
-    pub time_stamp: u32,
+pub struct RegisterDeviceIdRequest {
+    pub device_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]

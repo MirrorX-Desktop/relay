@@ -2,9 +2,16 @@ mod component;
 mod network;
 mod service;
 
+#[cfg(test)]
+mod test;
+
 use env_logger::{Builder, Target};
 use log::LevelFilter;
 use std::{io::Write, sync::Arc};
+
+pub trait HelloTrait {
+    fn hello_macro();
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
