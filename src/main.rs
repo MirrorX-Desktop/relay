@@ -21,9 +21,9 @@ async fn main() -> anyhow::Result<()> {
     let client_manager = Arc::new(component::online::ClientManager::new());
 
     let device_service = service::device::DeviceService::new(store, client_manager.clone());
-    let desktop_service = service::desktop::DesktopService::new(client_manager);
+    let proxy_service = service::proxy::ProxyService::new(client_manager.clone());
 
-    network::server::run(device_service, desktop_service).await
+    network::server::run(device_service, proxy_service, client_manager).await
 }
 
 fn init_logger() {

@@ -1006,6 +1006,7 @@ dependencies = [
  "lazy_static",
  "log",
  "num_enum",
+ "once_cell",
  "rand",
  "redis",
  "rustls",

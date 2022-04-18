@@ -1,7 +1,5 @@
-use super::packet::{Packet, ReplyPacket, RequestPacket};
-use crate::service::message::{
-    reply::ReplyMessage, reply_error::ReplyError, request::RequestMessage,
-};
+use super::packet::{Packet, ReplyPacket};
+use crate::service::message::reply_error::ReplyError;
 use bincode::{
     config::{LittleEndian, VarintEncoding, WithOtherEndian, WithOtherIntEncoding},
     DefaultOptions, Options,
@@ -9,11 +7,12 @@ use bincode::{
 use dashmap::DashMap;
 use lazy_static::lazy_static;
 use log::error;
+use once_cell::sync::OnceCell;
 use std::{
     sync::atomic::{AtomicU8, Ordering},
     time::Duration,
 };
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::mpsc;
 
 lazy_static! {
     pub static ref BINCODER: WithOtherIntEncoding<WithOtherEndian<DefaultOptions, LittleEndian>, VarintEncoding> =
@@ -25,7 +24,7 @@ lazy_static! {
 pub struct Client {
     tx: mpsc::Sender<Vec<u8>>,
     call_tx_map: DashMap<u8, mpsc::Sender<ReplyPacket>>,
-    device_id: RwLock<String>,
+    device_id: OnceCell<String>,
     call_id: AtomicU8,
 }
 
@@ -34,53 +33,56 @@ impl Client {
         Client {
             tx,
             call_tx_map: DashMap::new(),
-            device_id: RwLock::new(String::new()),
+            device_id: OnceCell::new(),
             call_id: AtomicU8::new(1),
         }
     }
 
-    pub fn device_id(&self) -> String {
-        self.device_id.blocking_read().clone()
+    pub fn device_id(&self) -> Option<String> {
+        self.device_id.get().and_then(|id| Some(id.clone()))
     }
 
-    pub fn set_device_id(&self, device_id: String) {
-        self.device_id.blocking_write().clone_from(&device_id)
+    pub fn set_device_id(&self, device_id: String) -> anyhow::Result<()> {
+        self.device_id
+            .set(device_id)
+            .map_err(|_| anyhow::anyhow!("device_id already set"))
     }
 
-    pub async fn call(
-        &self,
-        request: RequestMessage,
-        timeout: Duration,
-    ) -> Result<ReplyMessage, ReplyError> {
-        let call_id = self.next_call_id();
+    // pub async fn call(
+    //     &self,
+    //     request: RequestMessage,
+    //     timeout: Duration,
+    // ) -> Result<ReplyMessage, ReplyError> {
+    //     let call_id = self.next_call_id();
 
-        let packet = Packet {
-            request_packet: Some(RequestPacket {
-                call_id,
-                payload: request,
-            }),
-            reply_packet: None,
-        };
+    //     let packet = Packet {
+    //         request_packet: Some(RequestPacket {
+    //             call_id,
+    //             payload: request,
+    //             to_device_id: todo!(),
+    //         }),
+    //         reply_packet: None,
+    //     };
 
-        let mut rx = self.register_call(call_id);
+    //     let mut rx = self.register_call(call_id);
 
-        self.send(packet).await.map_err(|err| {
-            error!("client call failed: {:?}", err);
-            self.remove_call(call_id);
-            ReplyError::Internal
-        })?;
+    //     self.send(packet).await.map_err(|err| {
+    //         error!("client call failed: {:?}", err);
+    //         self.remove_call(call_id);
+    //         ReplyError::Internal
+    //     })?;
 
-        match tokio::time::timeout(timeout, rx.recv()).await {
-            Ok(res) => match res {
-                Some(reply_packet) => reply_packet.payload,
-                None => Err(ReplyError::Internal),
-            },
-            Err(_) => {
-                self.remove_call(call_id);
-                Err(ReplyError::Timeout)
-            }
-        }
-    }
+    //     match tokio::time::timeout(timeout, rx.recv()).await {
+    //         Ok(res) => match res {
+    //             Some(reply_packet) => reply_packet.payload,
+    //             None => Err(ReplyError::Internal),
+    //         },
+    //         Err(_) => {
+    //             self.remove_call(call_id);
+    //             Err(ReplyError::Timeout)
+    //         }
+    //     }
+    // }
 
     pub fn reply_call(&self, call_id: u8, reply_packet: ReplyPacket) {
         self.remove_call(call_id).map(|tx| {
@@ -106,7 +108,7 @@ impl Client {
         })
     }
 
-    async fn send(&self, packet: Packet) -> anyhow::Result<()> {
+    pub async fn send(&self, packet: Packet) -> anyhow::Result<()> {
         let buf = BINCODER.serialize(&packet)?;
         self.tx.send_timeout(buf, Duration::from_secs(1)).await?;
         Ok(())

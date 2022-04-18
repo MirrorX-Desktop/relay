@@ -1,7 +1,7 @@
 use super::message::{
-    reply::{HeartBeatReply, RegisterDeviceIdReply},
+    reply::{HeartBeatReply, RegisterIdReply},
     reply_error::ReplyError,
-    request::{HeartBeatRequest, RegisterDeviceIdRequest},
+    request::{HeartBeatRequest, RegisterRequest},
 };
 use crate::{
     component::{self, online::ClientManager, store::Store},
@@ -29,7 +29,7 @@ impl DeviceService {
         req: HeartBeatRequest,
     ) -> Result<HeartBeatReply, ReplyError> {
         debug!(
-            "handle heart_beat, client: {}, timestamp: {}",
+            "handle heart_beat, client: {:?}, timestamp: {}",
             client.device_id(),
             req.time_stamp
         );
@@ -42,18 +42,21 @@ impl DeviceService {
     pub async fn register_id(
         &self,
         client: Arc<Client>,
-        req: RegisterDeviceIdRequest,
-    ) -> Result<RegisterDeviceIdReply, ReplyError> {
+        req: RegisterRequest,
+    ) -> Result<RegisterIdReply, ReplyError> {
         info!("handle register_id");
 
         if let Some(device_id) = &req.device_id {
             match self.store.device_id_renew(device_id) {
                 Ok(Some(expire_at)) => {
-                    client.set_device_id(device_id.clone());
+                    if let Err(err) = client.set_device_id(device_id.clone()) {
+                        error!("register_id: {:?}", err);
+                        return Err(ReplyError::RepeatedRequest);
+                    }
 
                     self.client_manager.add(device_id.clone(), client);
 
-                    return Ok(RegisterDeviceIdReply {
+                    return Ok(RegisterIdReply {
                         device_id: device_id.to_string(),
                         expire_at,
                     });
@@ -76,11 +79,14 @@ impl DeviceService {
 
             match self.store.set_device_id(&new_device_id) {
                 Ok(Some(expire_at)) => {
-                    client.set_device_id(new_device_id.clone());
+                    if let Err(err) = client.set_device_id(new_device_id.clone()) {
+                        error!("register_id: {:?}", err);
+                        return Err(ReplyError::RepeatedRequest);
+                    }
 
                     self.client_manager.add(new_device_id.clone(), client);
 
-                    return Ok(RegisterDeviceIdReply {
+                    return Ok(RegisterIdReply {
                         device_id: new_device_id.to_string(),
                         expire_at,
                     });
