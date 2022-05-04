@@ -1,25 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-use crate::service::message::{
-    reply::ReplyMessage, reply_error::ReplyError, request::RequestMessage,
-};
+use super::{client_to_server::ClientToServerMessage, server_to_client::ServerToClientMessage};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct RequestPacket {
-    pub call_id: u8,
-    pub to_device_id: Option<String>,
-    pub payload: RequestMessage,
-}
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Packet {
+    /// (call_id, message)
+    ClientToServer(u16, ClientToServerMessage),
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ReplyPacket {
-    pub call_id: u8,
-    pub to_device_id: Option<String>,
-    pub payload: Result<ReplyMessage, ReplyError>,
-}
+    /// (call_id, message)
+    ServerToClient(u16, ServerToClientMessage),
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Packet {
-    pub request_packet: Option<RequestPacket>,
-    pub reply_packet: Option<ReplyPacket>,
+    /// (call_id, from_device_id, to_device_id, is_secure, message_bytes)
+    ClientToClient(u16, String, String, bool, Vec<u8>),
 }

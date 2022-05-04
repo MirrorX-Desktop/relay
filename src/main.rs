@@ -1,29 +1,20 @@
-mod component;
+mod handler;
+mod instance;
 mod network;
-mod service;
+mod utility;
 
 #[cfg(test)]
 mod test;
 
 use env_logger::{Builder, Target};
 use log::LevelFilter;
-use std::{io::Write, sync::Arc};
-
-pub trait HelloTrait {
-    fn hello_macro();
-}
+use std::io::Write;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_logger();
 
-    let store = component::store::new_store().unwrap();
-    let client_manager = Arc::new(component::online::ClientManager::new());
-
-    let device_service = service::device::DeviceService::new(store, client_manager.clone());
-    let proxy_service = service::proxy::ProxyService::new(client_manager.clone());
-
-    network::server::run(device_service, proxy_service, client_manager).await
+    network::server::run("0.0.0.0:40001").await
 }
 
 fn init_logger() {
