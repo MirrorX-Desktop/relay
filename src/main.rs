@@ -1,37 +1,45 @@
-mod handler;
-mod instance;
+mod component;
 mod network;
-mod utility;
 
-#[cfg(test)]
-mod test;
-
-use env_logger::{Builder, Target};
-use log::LevelFilter;
-use std::io::Write;
+use anyhow::bail;
+use log::{error, info};
+use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_logger();
+    component::logger::init();
+    component::config::init()?;
 
-    network::server::run("0.0.0.0:40001").await
-}
+    let cfg = match component::config::CONFIG.get() {
+        Some(v) => v,
+        None => bail!("read config instance failed"),
+    };
 
-fn init_logger() {
-    Builder::new()
-        .filter_level(LevelFilter::Info)
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "[{}] [{}({}#{})] {} {}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%3f"),
-                record.module_path().unwrap_or(""),
-                record.file().unwrap_or(""),
-                record.line().unwrap_or(0),
-                record.level(),
-                record.args(),
-            )
-        })
-        .target(Target::Stdout)
-        .init();
+    let listener = TcpListener::bind(cfg.listen_addr.clone()).await?;
+
+    tokio::spawn(async move {
+        if let Ok(addr) = listener.local_addr() {
+            info!("server listen on: {}", addr);
+        }
+
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(endpoint) => endpoint,
+                Err(err) => {
+                    error!("listener accept: {:?}", err);
+                    break;
+                }
+            };
+
+            tokio::spawn(async move {
+                if let Err(err) = network::client::serve(stream).await {
+                    error!("{}", err)
+                }
+            });
+        }
+    });
+
+    tokio::signal::ctrl_c()
+        .await
+        .map_err(|err| anyhow::anyhow!("failed to listen for event ({})", err))
 }

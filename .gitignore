@@ -1,4 +1,4 @@
 /target
 .idea
 .vscode
-cert
+**/.DS_Store
