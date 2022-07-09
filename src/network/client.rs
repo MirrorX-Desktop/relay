@@ -1,6 +1,6 @@
 use anyhow::bail;
 use fxhash::FxHashMap;
-use log::error;
+use log::{error, info};
 use once_cell::sync::Lazy;
 use std::time::Duration;
 use tokio::{
@@ -38,11 +38,25 @@ pub async fn serve(mut stream: TcpStream) -> anyhow::Result<()> {
     .await??;
     let passive_device_id = String::from_utf8(passive_device_id_buf.to_vec())?;
 
+    info!(
+        "serve client addr={} active={} passive={}",
+        stream.peer_addr().unwrap(),
+        String::from_utf8(active_device_id_buf.to_vec()).unwrap(),
+        String::from_utf8(passive_device_id_buf.to_vec()).unwrap()
+    );
+
     let mut clients = WAITING_CLIENTS.lock().await;
     if let Some(remote_stream) =
         clients.remove(&(active_device_id.clone(), passive_device_id.clone()))
     {
         // remote endpoint client had connected, go to transfer process
+        info!(
+            "matched addr_a={} addr_b={} active={} passive={}",
+            stream.peer_addr().unwrap(),
+            remote_stream.peer_addr().unwrap(),
+            active_device_id,
+            passive_device_id
+        );
         tokio::spawn(transfer_between_endpoints(stream, remote_stream));
     } else {
         clients.insert(
@@ -85,4 +99,5 @@ async fn transfer_between_endpoints(mut active_stream: TcpStream, mut passive_st
     };
 
     let _ = tokio::try_join!(active_to_passive, passive_to_active);
+    info!("exit both");
 }
