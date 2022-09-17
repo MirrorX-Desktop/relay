@@ -2,7 +2,7 @@ use crate::utility::serializer::BINCODE_SERIALIZER;
 use bincode::Options;
 use bytes::{Buf, Bytes};
 use dashmap::DashMap;
-use futures::{SinkExt, StreamExt, TryStreamExt};
+use futures::{SinkExt, StreamExt};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -60,7 +60,12 @@ pub async fn serve(
         // todo: find better way
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(60 * 2)).await;
-            WAITING_CLIENTS.remove(&(handshake_request.visit_credentials));
+            if let Some(_) = WAITING_CLIENTS.remove(&(handshake_request.visit_credentials)) {
+                tracing::debug!(
+                    device_id = handshake_request.device_id,
+                    "remove TTL reached unused stream"
+                );
+            }
         });
     }
 
