@@ -1,103 +1,142 @@
-use anyhow::bail;
-use fxhash::FxHashMap;
-use log::{error, info};
+use crate::utility::serializer::BINCODE_SERIALIZER;
+use bincode::Options;
+use bytes::{Buf, Bytes};
+use dashmap::DashMap;
+use futures::{SinkExt, StreamExt, TryStreamExt};
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-    sync::Mutex,
-};
+use tokio::{io::AsyncWriteExt, net::TcpStream};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-pub static WAITING_CLIENTS: Lazy<Mutex<FxHashMap<(String, String), TcpStream>>> =
-    Lazy::new(|| Mutex::new(FxHashMap::default()));
+pub static WAITING_CLIENTS: Lazy<DashMap<String, (i64, Framed<TcpStream, LengthDelimitedCodec>)>> =
+    Lazy::new(DashMap::new);
 
-pub async fn serve(mut stream: TcpStream) -> anyhow::Result<()> {
-    if let Err(err) = stream.set_nodelay(true) {
-        bail!("set nodelay for stream failed ({:?})", err);
-    }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct EndPointHandshakeRequest {
+    pub visit_credentials: String,
+    pub device_id: i64,
+}
 
-    // read first fixed size handshake buffer
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct EndPointHandshakeResponse {
+    pub remote_device_id: i64,
+}
 
-    // 10 bytes utf8(single byte same as ascii) active device id
-    // 10 bytes utf8(single byte same as ascii) passive device id
+pub async fn serve(
+    mut framed_stream: Framed<TcpStream, LengthDelimitedCodec>,
+) -> anyhow::Result<()> {
+    let handshake_request_bytes = framed_stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("read handshake request failed"))??;
 
-    let mut active_device_id_buf = [0u8; 10];
-    tokio::time::timeout(
-        Duration::from_secs(10),
-        stream.read_exact(&mut active_device_id_buf),
-    )
-    .await??;
-    let active_device_id = String::from_utf8(active_device_id_buf.to_vec())?;
+    let handshake_request: EndPointHandshakeRequest =
+        BINCODE_SERIALIZER.deserialize_from(handshake_request_bytes.reader())?;
 
-    let mut passive_device_id_buf = [0u8; 10];
-    tokio::time::timeout(
-        Duration::from_secs(10),
-        stream.read_exact(&mut passive_device_id_buf),
-    )
-    .await??;
-    let passive_device_id = String::from_utf8(passive_device_id_buf.to_vec())?;
-
-    info!(
-        "serve client addr={} active={} passive={}",
-        stream.peer_addr().unwrap(),
-        String::from_utf8(active_device_id_buf.to_vec()).unwrap(),
-        String::from_utf8(passive_device_id_buf.to_vec()).unwrap()
+    tracing::info!(
+        device_id = ?handshake_request.device_id,
+        "new client",
     );
 
-    let mut clients = WAITING_CLIENTS.lock().await;
-    if let Some(remote_stream) =
-        clients.remove(&(active_device_id.clone(), passive_device_id.clone()))
+    if let Some((visit_credentials, stream_tuple)) =
+        WAITING_CLIENTS.remove(&(handshake_request.visit_credentials))
     {
-        // remote endpoint client had connected, go to transfer process
-        info!(
-            "matched addr_a={} addr_b={} active={} passive={}",
-            stream.peer_addr().unwrap(),
-            remote_stream.peer_addr().unwrap(),
-            active_device_id,
-            passive_device_id
-        );
-        tokio::spawn(transfer_between_endpoints(stream, remote_stream));
+        if visit_credentials == handshake_request.visit_credentials {
+            tokio::spawn(async move {
+                transfer_between_endpoints(
+                    (handshake_request.device_id, framed_stream),
+                    stream_tuple,
+                )
+                .await;
+            });
+        }
     } else {
-        clients.insert(
-            (active_device_id.clone(), passive_device_id.clone()),
-            stream,
+        WAITING_CLIENTS.insert(
+            handshake_request.visit_credentials.to_owned(),
+            (handshake_request.device_id, framed_stream),
         );
 
+        // todo: find better way
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(60)).await;
-            let mut clients = WAITING_CLIENTS.lock().await;
-            clients.remove(&(active_device_id, passive_device_id))
+            tokio::time::sleep(Duration::from_secs(60 * 2)).await;
+            WAITING_CLIENTS.remove(&(handshake_request.visit_credentials));
         });
     }
 
-    return Ok(());
+    Ok(())
 }
 
-async fn transfer_between_endpoints(mut active_stream: TcpStream, mut passive_stream: TcpStream) {
-    // the 'active' and 'passive' flag just for identify, not realistic endpoint type.
+async fn transfer_between_endpoints(
+    stream_tuple1: (i64, Framed<TcpStream, LengthDelimitedCodec>),
+    stream_tuple2: (i64, Framed<TcpStream, LengthDelimitedCodec>),
+) {
+    let (device_id_1, mut stream_1) = stream_tuple1;
+    let (device_id_2, mut stream_2) = stream_tuple2;
 
-    if let Err(err) = active_stream.write(&vec![1u8]).await {
-        error!("stream write handshake response failed ({})", err);
+    if let Err(err) = reply_handshake(device_id_1, &mut stream_2).await {
+        tracing::error!(
+            reply_device_id = device_id_2,
+            ?err,
+            "reply handshake failed"
+        );
+        return;
     }
 
-    if let Err(err) = passive_stream.write(&vec![1u8]).await {
-        error!("stream write handshake response failed ({})", err);
+    if let Err(err) = reply_handshake(device_id_2, &mut stream_1).await {
+        tracing::error!(
+            reply_device_id = device_id_1,
+            ?err,
+            "reply handshake failed"
+        );
+        return;
     }
 
-    let (mut active_reader, mut active_writer) = active_stream.split();
-    let (mut passive_reader, mut passive_writer) = passive_stream.split();
+    let mut stream_1 = stream_1.into_inner();
+    let mut stream_2 = stream_2.into_inner();
+
+    let (mut reader_1, mut writer_1) = stream_1.split();
+    let (mut reader_2, mut writer_2) = stream_2.split();
 
     let active_to_passive = async {
-        tokio::io::copy(&mut active_reader, &mut passive_writer).await?;
-        passive_writer.shutdown().await
+        tokio::io::copy(&mut reader_1, &mut writer_2).await?;
+        writer_2.shutdown().await?;
+        tracing::debug!(
+            reader_device_id = device_id_1,
+            writer_device_id = device_id_2,
+            "copy process exit"
+        );
+        std::io::Result::Ok(())
     };
 
     let passive_to_active = async {
-        tokio::io::copy(&mut passive_reader, &mut active_writer).await?;
-        active_writer.shutdown().await
+        tokio::io::copy(&mut reader_2, &mut writer_1).await?;
+        writer_1.shutdown().await?;
+        tracing::debug!(
+            reader_device_id = device_id_2,
+            writer_device_id = device_id_1,
+            "copy process exit"
+        );
+        std::io::Result::Ok(())
     };
 
     let _ = tokio::try_join!(active_to_passive, passive_to_active);
-    info!("exit both");
+    tracing::info!("exit both");
+}
+
+async fn reply_handshake(
+    other_side_device_id: i64,
+    stream: &mut Framed<TcpStream, LengthDelimitedCodec>,
+) -> anyhow::Result<()> {
+    let resp = EndPointHandshakeResponse {
+        remote_device_id: other_side_device_id,
+    };
+
+    let resp_buffer = BINCODE_SERIALIZER
+        .serialize(&resp)
+        .map_err(|err| anyhow::anyhow!(err))?;
+
+    stream.send(Bytes::from(resp_buffer)).await?;
+
+    Ok(())
 }

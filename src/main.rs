@@ -1,39 +1,47 @@
-mod component;
 mod network;
+mod utility;
 
-use anyhow::bail;
-use log::{error, info};
+use dotenvy::dotenv;
 use tokio::net::TcpListener;
+use tokio_util::codec::LengthDelimitedCodec;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    component::logger::init();
-    component::config::init()?;
+    tracing_subscriber::fmt::init();
 
-    let cfg = match component::config::CONFIG.get() {
-        Some(v) => v,
-        None => bail!("read config instance failed"),
-    };
+    tracing::info!("load .env from {:?}", dotenv().unwrap());
 
-    let listener = TcpListener::bind(cfg.listen_addr.clone()).await?;
+    let tcp_listen_addr = std::env::var("TCP_LISTEN_ADDR")?;
+
+    let listener = TcpListener::bind(&tcp_listen_addr).await?;
 
     tokio::spawn(async move {
         if let Ok(addr) = listener.local_addr() {
-            info!("server listen on: {}", addr);
+            tracing::info!("server listen on: {}", addr);
         }
 
         loop {
             let (stream, _) = match listener.accept().await {
                 Ok(endpoint) => endpoint,
                 Err(err) => {
-                    error!("listener accept: {:?}", err);
+                    tracing::error!(?err, "listener accept failed");
                     break;
                 }
             };
 
+            if let Err(err) = stream.set_nodelay(true) {
+                tracing::error!(?err, "set stream nodelay failed");
+                continue;
+            }
+
+            let framed_stream = LengthDelimitedCodec::builder()
+                .little_endian()
+                .max_frame_length(32 * 1024 * 1024)
+                .new_framed(stream);
+
             tokio::spawn(async move {
-                if let Err(err) = network::client::serve(stream).await {
-                    error!("{}", err)
+                if let Err(err) = network::client::serve(framed_stream).await {
+                    tracing::error!(?err, "serve tcp stream failed")
                 }
             });
         }
