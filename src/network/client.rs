@@ -1,11 +1,11 @@
 use crate::utility::serializer::BINCODE_SERIALIZER;
 use bincode::Options;
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{ops::Deref, time::Duration};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
@@ -32,7 +32,7 @@ pub async fn serve(
         .ok_or_else(|| anyhow::anyhow!("read handshake request failed"))??;
 
     let handshake_request: EndPointHandshakeRequest =
-        BINCODE_SERIALIZER.deserialize_from(handshake_request_bytes.reader())?;
+        BINCODE_SERIALIZER.deserialize(handshake_request_bytes.freeze().deref())?;
 
     tracing::info!(
         device_id = ?handshake_request.device_id,
@@ -60,7 +60,10 @@ pub async fn serve(
         // todo: find better way
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(60 * 2)).await;
-            if let Some(_) = WAITING_CLIENTS.remove(&(handshake_request.visit_credentials)) {
+            if WAITING_CLIENTS
+                .remove(&(handshake_request.visit_credentials))
+                .is_some()
+            {
                 tracing::debug!(
                     device_id = handshake_request.device_id,
                     "remove TTL reached unused stream"
@@ -140,6 +143,8 @@ async fn reply_handshake(
     let resp_buffer = BINCODE_SERIALIZER
         .serialize(&resp)
         .map_err(|err| anyhow::anyhow!(err))?;
+
+    tracing::info!(?resp_buffer, ?other_side_device_id, "serialize");
 
     stream.send(Bytes::from(resp_buffer)).await?;
 
