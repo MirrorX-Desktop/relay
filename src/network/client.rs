@@ -9,12 +9,13 @@ use std::{ops::Deref, time::Duration};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-pub static WAITING_CLIENTS: Lazy<DashMap<String, (i64, Framed<TcpStream, LengthDelimitedCodec>)>> =
+pub static WAITING_CLIENTS: Lazy<DashMap<Vec<u8>, (i64, Framed<TcpStream, LengthDelimitedCodec>)>> =
     Lazy::new(DashMap::new);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EndPointHandshakeRequest {
-    pub visit_credentials: String,
+    #[serde(with = "serde_bytes")]
+    pub visit_credentials: Vec<u8>,
     pub device_id: i64,
 }
 
